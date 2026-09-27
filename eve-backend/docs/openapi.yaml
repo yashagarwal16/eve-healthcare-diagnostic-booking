@@ -1,0 +1,205 @@
+openapi: 3.0.3
+info:
+  title: EVE Healthcare — Diagnostic Booking API
+  version: "1.0.0"
+  description: >
+    Backend service for diagnostic test bookings and simulated payments.
+    Hand-written spec (no flask-swagger-ui dependency) — view it at
+    https://editor.swagger.io by pasting this file in.
+servers:
+  - url: http://localhost:5000
+paths:
+  /auth/signup:
+    post:
+      summary: Create a new user account
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, email, password]
+              properties:
+                name: { type: string, example: "Yash Agarwal" }
+                email: { type: string, example: "yash@example.com" }
+                password: { type: string, example: "supersecret123" }
+      responses:
+        "201": { description: User created, JWT returned }
+        "400": { description: Validation error }
+        "409": { description: Email already registered }
+
+  /auth/login:
+    post:
+      summary: Log in and obtain a JWT
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email: { type: string }
+                password: { type: string }
+      responses:
+        "200": { description: JWT returned }
+        "401": { description: Invalid credentials }
+
+  /centres:
+    get:
+      summary: List diagnostic centres with their tests (paginated)
+      parameters:
+        - name: page
+          in: query
+          schema: { type: integer, default: 1 }
+        - name: page_size
+          in: query
+          schema: { type: integer, default: 20 }
+      responses:
+        "200": { description: Paginated list of centres and their tests }
+    post:
+      summary: Register a new diagnostic centre (auth required)
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, location]
+              properties:
+                name: { type: string }
+                location: { type: string }
+      responses:
+        "201": { description: Centre created }
+        "400": { description: Validation error }
+
+  /centres/{centre_id}/tests:
+    post:
+      summary: Add a diagnostic test to a centre (auth required)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: centre_id
+          in: path
+          required: true
+          schema: { type: integer }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, price]
+              properties:
+                name: { type: string }
+                price: { type: number }
+      responses:
+        "201": { description: Test created }
+        "404": { description: Centre not found }
+
+  /bookings:
+    post:
+      summary: Book a diagnostic test (auth required)
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [test_id, appointment_time]
+              properties:
+                test_id: { type: integer }
+                appointment_time:
+                  type: string
+                  example: "2026-10-05T14:30:00"
+      responses:
+        "201": { description: Booking created with status PENDING }
+        "404": { description: Test not found }
+    get:
+      summary: List the authenticated user's bookings (auth required, paginated)
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200": { description: Paginated list of the caller's bookings }
+
+  /bookings/{booking_id}:
+    get:
+      summary: Get a single booking (auth required, owner only)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: booking_id
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        "200": { description: Booking detail }
+        "403": { description: Not the booking owner }
+        "404": { description: Booking not found }
+
+  /bookings/{booking_id}/cancel:
+    post:
+      summary: Cancel a PENDING booking (auth required, owner only)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: booking_id
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        "200": { description: Booking cancelled }
+        "403": { description: Not the booking owner }
+        "404": { description: Booking not found }
+        "409": { description: Booking already CONFIRMED or CANCELLED }
+
+  /payments/:
+    post:
+      summary: Simulate a synchronous payment for a booking (auth required)
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [booking_id]
+              properties:
+                booking_id: { type: integer }
+      responses:
+        "200": { description: Payment FAILED, booking marked FAILED }
+        "201": { description: Payment SUCCESS, booking marked CONFIRMED }
+        "403": { description: Not the booking owner }
+        "404": { description: Booking not found }
+        "409": { description: Booking not in a payable (PENDING) state }
+
+  /payments/webhook/:
+    post:
+      summary: >
+        Simulated payment-provider webhook. Idempotent: replays of the same
+        event_id are detected and ignored (see README for design).
+      parameters:
+        - name: X-Webhook-Secret
+          in: header
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [event_id, booking_id, status]
+              properties:
+                event_id: { type: string }
+                booking_id: { type: integer }
+                status: { type: string, enum: [SUCCESS, FAILED] }
+      responses:
+        "200": { description: Event processed (or duplicate, safely ignored) }
+        "401": { description: Invalid webhook secret }
+        "404": { description: Booking not found }
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT

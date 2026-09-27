@@ -1,0 +1,34 @@
+services:
+  db:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    environment:
+      ACCEPT_EULA: "Y"
+      MSSQL_SA_PASSWORD: "YourStrong!Passw0rd"
+    ports:
+      - "1433:1433"
+    volumes:
+      - mssql_data:/var/opt/mssql
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/mssql-tools18/bin/sqlcmd -C -S localhost -U sa -P \"YourStrong!Passw0rd\" -Q 'SELECT 1' || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build: .
+    ports:
+      - "5000:5000"
+    environment:
+      MSSQL_HOST: db
+      MSSQL_PORT: 1433
+      MSSQL_USER: sa
+      MSSQL_PASSWORD: "YourStrong!Passw0rd"
+      MSSQL_DB: eve_healthcare
+      JWT_SECRET: "change-this-in-production"
+      PAYMENT_SUCCESS_RATE: "0.8"
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  mssql_data:
